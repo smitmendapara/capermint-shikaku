@@ -1,0 +1,28 @@
+{
+  "name": "shikaku",
+  "version": "1.0.0",
+  "description": "Shikaku puzzle game with Socket.IO",
+  "main": "src/CPMserver.js",
+  "scripts": {
+    "start": "node src/CPMserver.js",
+    "dev": "nodemon src/CPMserver.js",
+    "prod": "node src/CPMserver.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "mongoose": "^8.12.1",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.9"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

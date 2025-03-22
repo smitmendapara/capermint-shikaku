@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shikaku Puzzle</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .game-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .board {
+            display: grid;
+            gap: 1px;
+            background-color: #ccc;
+            padding: 1px;
+            margin: 20px auto;
+            width: fit-content;
+            position: relative;
+        }
+
+        .cell {
+            width: 50px;
+            height: 50px;
+            background-color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            position: relative;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .cell.numbered {
+            font-weight: bold;
+            color: #000;
+        }
+
+        .cell.highlight {
+            background-color: rgba(0, 0, 255, 0.1);
+        }
+
+        .cell.uncovered {
+            background-color: #ffebee;
+        }
+
+        .rectangle {
+            position: absolute;
+            border: 2px solid blue;
+            background-color: rgba(0, 0, 255, 0.1);
+            pointer-events: none;
+            transition: all 0.3s ease;
+            z-index: 1;
+            box-sizing: border-box;
+        }
+
+        .rectangle.temp {
+            border-style: dashed;
+        }
+
+        .rectangle.correct {
+            border-color: green;
+            background-color: rgba(0, 255, 0, 0.1);
+        }
+
+        .rectangle.incorrect {
+            border-color: red;
+            background-color: rgba(255, 0, 0, 0.1);
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #1976D2;
+        }
+
+        select {
+            padding: 8px 15px;
+            font-size: 16px;
+            border: 2px solid #2196F3;
+            border-radius: 5px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        select:hover {
+            border-color: #1976D2;
+        }
+
+        .dimension-label {
+            font-size: 16px;
+            color: #333;
+            margin-right: 10px;
+        }
+
+        .timer {
+            font-size: 24px;
+            margin: 20px 0;
+            color: #333;
+        }
+
+        .win-message {
+            background-color: #E8F5E9;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 20px;
+            color: #2E7D32;
+            text-align: center;
+            margin: 10px 0;
+            display: none;
+            border: 2px solid #4CAF50;
+        }
+
+        .win-message h2 {
+            color: #2E7D32;
+            margin: 0 0 10px 0;
+            font-size: 24px;
+        }
+
+        .win-time {
+            font-size: 22px;
+            font-weight: bold;
+            color: #1976D2;
+            margin: 10px 0;
+        }
+
+        .rules {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #E3F2FD;
+            border-radius: 5px;
+            max-width: 600px;
+            line-height: 1.5;
+        }
+
+        .rules h2 {
+            margin-top: 0;
+            color: #1976D2;
+        }
+
+        .rules ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+
+        .rules li {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>Shikaku Puzzle</h1>
+        <div id="winMessage" class="win-message">
+            <h2>🎉 Congratulations! You've solved the puzzle! 🎉</h2>
+            <div class="win-time">
+                Time: <span id="finalTime"></span>
+            </div>
+        </div>
+        <div class="controls">
+            <span class="dimension-label">Board Size:</span>
+            <select id="dimensionSelect">
+                <option value="5">5 x 5</option>
+                <option value="6">6 x 6</option>
+                <option value="7">7 x 7</option>
+                <option value="8">8 x 8</option>
+            </select>
+            <button id="newGame">New Game</button>
+            <button id="reset">Reset</button>
+        </div>
+        <div class="timer">Time: <span id="time">0:00</span></div>
+        <div id="board" class="board"></div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        let boardId = null;
+        let startCell = null;
+        let currentRectangle = null;
+        let startTime = null;
+        let timerInterval = null;
+        let boardState = null;
+        let isDrawing = false;
+        let currentNumber = null;
+
+        // Initialize the game
+        function initializeGame() {
+            const dimension = parseInt(document.getElementById('dimensionSelect').value);
+            socket.emit('initializeGame', { width: dimension, height: dimension });
+            startTime = new Date();
+            updateTimer();
+            document.getElementById('winMessage').style.display = 'none';
+            // Re-enable board interactions
+            const board = document.getElementById('board');
+            if (board) {
+                board.style.pointerEvents = 'auto';
+            }
+        }
+
+        // Update timer display
+        function updateTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((new Date() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('time').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        // Create the game board
+        function createBoard(width, height, numbers) {
+            const board = document.getElementById('board');
+            board.style.gridTemplateColumns = `repeat(${width}, 50px)`;
+            board.innerHTML = '';
+            boardState = numbers;
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+                    if (numbers[y][x] > 0) {
+                        cell.textContent = numbers[y][x];
+                        cell.classList.add('numbered');
+                    }
+                    board.appendChild(cell);
+                }
+            }
+
+            // Add event listeners
+            board.addEventListener('mousedown', startDrawing);
+            board.addEventListener('mousemove', updateDrawing);
+            board.addEventListener('mouseup', finishDrawing);
+            board.addEventListener('mouseleave', cancelDrawing);
+            board.addEventListener('contextmenu', removeRectangle);
+        }
+
+        // Start drawing a rectangle
+        function startDrawing(e) {
+            if (e.button !== 0) return; // Only left click
+            e.preventDefault();
+            
+            const cell = e.target.closest('.cell');
+            if (!cell) return;
+
+            const x = parseInt(cell.dataset.x);
+            const y = parseInt(cell.dataset.y);
+            
+            isDrawing = true;
+            startCell = { x, y };
+            
+            currentRectangle = document.createElement('div');
+            currentRectangle.className = 'rectangle temp';
+            document.getElementById('board').appendChild(currentRectangle);
+            
+            updateRectangle(e);
+        }
+
+        // Update rectangle while drawing
+        function updateDrawing(e) {
+            if (!isDrawing) return;
+            updateRectangle(e);
+        }
+
+        // Update rectangle position and size
+        function updateRectangle(e) {
+            if (!currentRectangle || !startCell) return;
+            
+            const board = document.getElementById('board');
+            const rect = board.getBoundingClientRect();
+            
+            // Get the cell under the mouse
+            const cell = e.target.closest('.cell');
+            if (!cell) {
+                // If mouse is outside cells but still within board bounds
+                const x = Math.floor((e.clientX - rect.left) / 51);
+                const y = Math.floor((e.clientY - rect.top) / 51);
+                
+                // Clamp values to board boundaries
+                const endX = Math.max(0, Math.min(x, boardState[0].length - 1));
+                const endY = Math.max(0, Math.min(y, boardState.length - 1));
+                
+                updateRectanglePosition(endX, endY);
+            } else {
+                const endX = parseInt(cell.dataset.x);
+                const endY = parseInt(cell.dataset.y);
+                updateRectanglePosition(endX, endY);
+            }
+        }
+
+        // Helper function to update rectangle position and size
+        function updateRectanglePosition(endX, endY) {
+            const left = Math.min(startCell.x, endX);
+            const top = Math.min(startCell.y, endY);
+            const width = Math.abs(endX - startCell.x) + 1;
+            const height = Math.abs(endY - startCell.y) + 1;
+
+            // Calculate position including gaps
+            const cellWidth = 51; // 50px cell + 1px gap
+            currentRectangle.style.left = (left * cellWidth + 1) + 'px';
+            currentRectangle.style.top = (top * cellWidth + 1) + 'px';
+            currentRectangle.style.width = (width * cellWidth - 1) + 'px';
+            currentRectangle.style.height = (height * cellWidth - 1) + 'px';
+
+            // Find numbers within the rectangle
+            let numbersInRect = [];
+            for (let y = top; y < top + height; y++) {
+                for (let x = left; x < left + width; x++) {
+                    if (boardState[y][x] > 0) {
+                        numbersInRect.push({
+                            value: boardState[y][x],
+                            x,
+                            y
+                        });
+                    }
+                }
+            }
+
+            // Visual feedback based on numbers in rectangle
+            if (numbersInRect.length === 0) {
+                currentRectangle.classList.remove('correct', 'incorrect');
+            } else if (numbersInRect.length === 1) {
+                const isValid = width * height === numbersInRect[0].value;
+                currentRectangle.classList.toggle('incorrect', !isValid);
+                currentRectangle.classList.toggle('correct', isValid);
+                currentNumber = numbersInRect[0].value;
+            } else {
+                currentRectangle.classList.add('incorrect');
+                currentRectangle.classList.remove('correct');
+            }
+        }
+
+        // Cancel drawing when mouse leaves the board
+        function cancelDrawing() {
+            if (isDrawing) {
+                if (currentRectangle) {
+                    currentRectangle.remove();
+                }
+                isDrawing = false;
+                startCell = null;
+                currentRectangle = null;
+                currentNumber = null;
+            }
+        }
+
+        // Finish drawing a rectangle
+        function finishDrawing(e) {
+            if (!isDrawing) return;
+            
+            const board = document.getElementById('board');
+            const rect = board.getBoundingClientRect();
+            
+            let endX, endY;
+            const cell = e.target.closest('.cell');
+            
+            if (!cell) {
+                // If mouse is outside cells but still within board bounds
+                const x = Math.floor((e.clientX - rect.left) / 51);
+                const y = Math.floor((e.clientY - rect.top) / 51);
+                
+                // Clamp values to board boundaries
+                endX = Math.max(0, Math.min(x, boardState[0].length - 1));
+                endY = Math.max(0, Math.min(y, boardState.length - 1));
+            } else {
+                endX = parseInt(cell.dataset.x);
+                endY = parseInt(cell.dataset.y);
+            }
+
+            const startX = Math.min(startCell.x, endX);
+            const startY = Math.min(startCell.y, endY);
+            const width = Math.abs(endX - startCell.x) + 1;
+            const height = Math.abs(endY - startCell.y) + 1;
+
+            // Find numbers within the rectangle
+            let numbersInRect = [];
+            for (let y = startY; y < startY + height; y++) {
+                for (let x = startX; x < startX + width; x++) {
+                    if (boardState[y][x] > 0) {
+                        numbersInRect.push({
+                            value: boardState[y][x],
+                            x,
+                            y
+                        });
+                    }
+                }
+            }
+
+            // Only place rectangle if it contains exactly one number and area matches
+            if (numbersInRect.length === 1 && width * height === numbersInRect[0].value) {
+                socket.emit('placeRectangle', {
+                    boardId,
+                    rectangle: {
+                        startX,
+                        startY,
+                        endX: startX + width - 1,
+                        endY: startY + height - 1,
+                        value: numbersInRect[0].value
+                    }
+                });
+            } else {
+                currentRectangle.remove();
+            }
+
+            isDrawing = false;
+            startCell = null;
+            currentRectangle = null;
+            currentNumber = null;
+        }
+
+        // Remove a rectangle on right click
+        function removeRectangle(e) {
+            e.preventDefault();
+            const cell = e.target.closest('.cell');
+            if (!cell) return;
+
+            const x = parseInt(cell.dataset.x);
+            const y = parseInt(cell.dataset.y);
+            
+            // Find the rectangle that contains this cell
+            const rectangles = document.querySelectorAll('.rectangle:not(.temp)');
+            rectangles.forEach(rect => {
+                const left = parseInt(rect.style.left) / 51;
+                const top = parseInt(rect.style.top) / 51;
+                const width = (parseInt(rect.style.width) + 1) / 51;
+                const height = (parseInt(rect.style.height) + 1) / 51;
+
+                if (x >= left && x < left + width && y >= top && y < top + height) {
+                    socket.emit('removeRectangle', {
+                        boardId,
+                        startX: left,
+                        startY: top,
+                        endX: left + width - 1,
+                        endY: top + height - 1
+                    });
+                }
+            });
+        }
+
+        // Socket event handlers
+        socket.on('gameInitialized', (data) => {
+            boardId = data.boardId;
+            createBoard(data.width, data.height, data.board);
+            startTime = new Date();
+            // Ensure board interactions are enabled
+            const board = document.getElementById('board');
+            board.style.pointerEvents = 'auto';
+            // Remove any existing rectangles
+            document.querySelectorAll('.rectangle').forEach(rect => rect.remove());
+        });
+
+        socket.on('rectanglePlaced', (data) => {
+            // Remove all existing rectangles
+            document.querySelectorAll('.rectangle').forEach(rect => rect.remove());
+
+            // Create a grid to track covered cells
+            const coveredCells = Array(boardState.length).fill().map(() => 
+                Array(boardState[0].length).fill(false));
+
+            let allRectanglesValid = true;
+
+            // Draw all rectangles and mark covered cells
+            data.rectangles.forEach(rect => {
+                const rectangle = document.createElement('div');
+                rectangle.className = 'rectangle';
+                const cellWidth = 51;
+                rectangle.style.left = (rect.startX * cellWidth + 1) + 'px';
+                rectangle.style.top = (rect.startY * cellWidth + 1) + 'px';
+                rectangle.style.width = ((rect.endX - rect.startX + 1) * cellWidth - 1) + 'px';
+                rectangle.style.height = ((rect.endY - rect.startY + 1) * cellWidth - 1) + 'px';
+
+                // Check if rectangle area matches its number
+                const width = rect.endX - rect.startX + 1;
+                const height = rect.endY - rect.startY + 1;
+                if (width * height !== rect.value) {
+                    allRectanglesValid = false;
+                    rectangle.classList.add('incorrect');
+                } else {
+                    rectangle.classList.add('correct');
+                }
+
+                document.getElementById('board').appendChild(rectangle);
+
+                // Mark cells as covered
+                for (let y = rect.startY; y <= rect.endY; y++) {
+                    for (let x = rect.startX; x <= rect.endX; x++) {
+                        coveredCells[y][x] = true;
+                    }
+                }
+            });
+
+            // Update cell styling based on coverage
+            const cells = document.querySelectorAll('.cell');
+            cells.forEach(cell => {
+                const x = parseInt(cell.dataset.x);
+                const y = parseInt(cell.dataset.y);
+                cell.classList.toggle('uncovered', !coveredCells[y][x]);
+            });
+
+            // Check if all cells are covered
+            const allCovered = coveredCells.every(row => row.every(cell => cell));
+
+            // Show win message only if all cells are covered AND all rectangles are valid
+            if (allCovered && allRectanglesValid) {
+                clearInterval(timerInterval);
+                const finalTimeEl = document.getElementById('finalTime');
+                const elapsedSeconds = Math.floor((new Date() - startTime) / 1000);
+                const minutes = Math.floor(elapsedSeconds / 60);
+                const seconds = elapsedSeconds % 60;
+                finalTimeEl.textContent = `${minutes} minute${minutes !== 1 ? 's' : ''} and ${seconds} second${seconds !== 1 ? 's' : ''}`;
+                document.getElementById('winMessage').style.display = 'block';
+                
+                // Make all rectangles green to indicate success
+                document.querySelectorAll('.rectangle').forEach(rect => {
+                    rect.classList.remove('incorrect');
+                    rect.classList.add('correct');
+                });
+
+                // Disable board interactions after win
+                const board = document.getElementById('board');
+                board.style.pointerEvents = 'none';
+            }
+        });
+
+        socket.on('rectangleRemoved', (data) => {
+            // Remove all existing rectangles
+            document.querySelectorAll('.rectangle').forEach(rect => rect.remove());
+
+            // Create a grid to track covered cells
+            const coveredCells = Array(boardState.length).fill().map(() => 
+                Array(boardState[0].length).fill(false));
+
+            // Redraw remaining rectangles and mark covered cells
+            data.rectangles.forEach(rect => {
+                const rectangle = document.createElement('div');
+                rectangle.className = 'rectangle';
+                const cellWidth = 51;
+                rectangle.style.left = (rect.startX * cellWidth + 1) + 'px';
+                rectangle.style.top = (rect.startY * cellWidth + 1) + 'px';
+                rectangle.style.width = ((rect.endX - rect.startX + 1) * cellWidth - 1) + 'px';
+                rectangle.style.height = ((rect.endY - rect.startY + 1) * cellWidth - 1) + 'px';
+                document.getElementById('board').appendChild(rectangle);
+
+                // Mark cells as covered
+                for (let y = rect.startY; y <= rect.endY; y++) {
+                    for (let x = rect.startX; x <= rect.endX; x++) {
+                        coveredCells[y][x] = true;
+                    }
+                }
+            });
+
+            // Update cell styling based on coverage
+            const cells = document.querySelectorAll('.cell');
+            cells.forEach(cell => {
+                const x = parseInt(cell.dataset.x);
+                const y = parseInt(cell.dataset.y);
+                cell.classList.toggle('uncovered', !coveredCells[y][x]);
+            });
+        });
+
+        socket.on('error', (data) => {
+            alert(data.message);
+            cancelDrawing();
+        });
+
+        // Initialize game when page loads
+        document.getElementById('newGame').addEventListener('click', initializeGame);
+        document.getElementById('reset').addEventListener('click', () => {
+            if (boardId) {
+                socket.emit('resetGame', { boardId });
+            }
+        });
+        initializeGame();
+    </script>
+</body>
+</html> 
